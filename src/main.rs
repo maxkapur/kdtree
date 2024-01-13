@@ -3,38 +3,41 @@ use rand::prelude::*;
 use std::rc::Rc;
 
 const MAX_N_SAMPLES: usize = 100;
-const N_POINTS_FAKEDATA: usize = 1000;
+const N_POINTS_FAKEDATA: usize = 1001;
 
 fn main() {
     let points = fake_data(None);
     for i in 0..25 {
         println!("point: {:?}", points[i])
     }
-    let tree = Node::new(&points, None);
+    let tree = KDTree::new(&points, None);
     let p1 = points[0];
     let p2 = [0.3, 0.1, 0.7];
 
     println!("contains p1: {}", tree.contains(&p1));
     println!("contains p2: {}", tree.contains(&p2));
+    let (neighbor, distance) = tree.nearest_neighbor(&p2);
+    println!("nearest neighbor to p2: {:?}", neighbor);
+    println!("distance: {}", distance);
 }
 
 struct Stem<T: KDTreeableFloat, const K: usize> {
     median: T,
-    left: Node<T, K>,
-    right: Node<T, K>,
+    left: KDTree<T, K>,
+    right: KDTree<T, K>,
 }
 
 struct Leaf<T: KDTreeableFloat, const K: usize>([T; K]);
 
-enum Node<T: KDTreeableFloat, const K: usize> {
+enum KDTree<T: KDTreeableFloat, const K: usize> {
     Stem(Rc<Stem<T, K>>),
     Leaf(Rc<Leaf<T, K>>),
 }
 
-impl<T: KDTreeableFloat, const K: usize> Node<T, K> {
-    pub fn new(points: &Vec<[T; K]>, k: Option<usize>) -> Node<T, K> {
+impl<T: KDTreeableFloat, const K: usize> KDTree<T, K> {
+    pub fn new(points: &Vec<[T; K]>, k: Option<usize>) -> KDTree<T, K> {
         if points.len() == 1 {
-            return Node::Leaf(Leaf(points[0]).into());
+            return KDTree::Leaf(Leaf(points[0]).into());
         }
 
         let k = k.unwrap_or(0);
@@ -51,10 +54,10 @@ impl<T: KDTreeableFloat, const K: usize> Node<T, K> {
             }
         }
 
-        let left = Node::new(&left_points, Some((k + 1) % K));
-        let right = Node::new(&right_points, Some((k + 1) % K));
+        let left = KDTree::new(&left_points, Some((k + 1) % K));
+        let right = KDTree::new(&right_points, Some((k + 1) % K));
 
-        return Node::Stem(
+        return KDTree::Stem(
             Stem {
                 median,
                 left,
@@ -64,16 +67,29 @@ impl<T: KDTreeableFloat, const K: usize> Node<T, K> {
         );
     }
 
-    // todo:
+    // Depth-first search the tree to see if it contains the given point
     pub fn contains(&self, point: &[T; K]) -> bool {
         return match self {
-            Node::Leaf(leaf) => *point == leaf.0,
-            Node::Stem(stem) => stem.left.contains(point) || stem.right.contains(point),
+            KDTree::Leaf(leaf) => *point == leaf.0,
+            KDTree::Stem(stem) => stem.left.contains(point) || stem.right.contains(point),
         };
     }
 
     // todo:
-    pub fn nearest_neighbor() {}
+    pub fn nearest_neighbor(&self, point: &[T; K]) -> ([T; K], T) {
+        match self {
+            KDTree::Leaf(leaf) => return (leaf.0, squared_distance(point, &leaf.0.into())),
+            KDTree::Stem(stem) => {
+                let (nearest_left, distance_left) = stem.left.nearest_neighbor(point);
+                let (nearest_right, distance_right) = stem.right.nearest_neighbor(point);
+                if distance_left <= distance_right {
+                    return (nearest_left, distance_left);
+                } else {
+                    return (nearest_right, distance_right);
+                }
+            }
+        };
+    }
 
     // todo: maybe
     pub fn push() {}
@@ -83,6 +99,14 @@ impl<T: KDTreeableFloat, const K: usize> Node<T, K> {
 
     // todo: maybe
     pub fn merge() {}
+}
+
+fn squared_distance<T: KDTreeableFloat, const K: usize>(point0: &[T; K], point1: &[T; K]) -> T {
+    let init: T = 0.0.into();
+    return (0..K).fold(init, |accum, i| {
+        let diff = point0[i] - point1[i];
+        accum + diff * diff
+    });
 }
 
 trait KDTreeableFloat: PartialOrd + Float + From<f64> {}
