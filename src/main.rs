@@ -16,7 +16,7 @@ fn main() {
 
     println!("contains p1: {}", tree.contains(&p1));
     println!("contains p2: {}", tree.contains(&p2));
-    let (neighbor, distance) = tree.nearest_neighbor(&p2);
+    let (neighbor, distance) = tree.nearest_neighbor(&p2, None);
     println!("nearest neighbor to p2: {:?}", neighbor);
     println!("distance: {}", distance);
 }
@@ -76,19 +76,26 @@ impl<T: KDTreeableFloat, const K: usize> KDTree<T, K> {
     }
 
     // todo:
-    pub fn nearest_neighbor(&self, point: &[T; K]) -> ([T; K], T) {
+    pub fn nearest_neighbor(
+        &self,
+        point: &[T; K],
+        best_so_far: Option<([T; K], T)>,
+    ) -> ([T; K], T) {
         match self {
-            KDTree::Leaf(leaf) => return (leaf.0, squared_distance(point, &leaf.0.into())),
+            KDTree::Leaf(leaf) => {
+                return closer_of(point, leaf.0.into(), best_so_far);
+            }
             KDTree::Stem(stem) => {
-                let (nearest_left, distance_left) = stem.left.nearest_neighbor(point);
-                let (nearest_right, distance_right) = stem.right.nearest_neighbor(point);
-                if distance_left <= distance_right {
-                    return (nearest_left, distance_left);
+                let best_left = stem.left.nearest_neighbor(point, best_so_far);
+                let best_right = stem.right.nearest_neighbor(point, best_so_far);
+
+                if best_left.1 <= best_right.1 {
+                    return best_left;
                 } else {
-                    return (nearest_right, distance_right);
+                    return best_right;
                 }
             }
-        };
+        }
     }
 
     // todo: maybe
@@ -107,6 +114,24 @@ fn squared_distance<T: KDTreeableFloat, const K: usize>(point0: &[T; K], point1:
         let diff = point0[i] - point1[i];
         accum + diff * diff
     });
+}
+
+fn closer_of<T: KDTreeableFloat, const K: usize>(
+    point: &[T; K],
+    candidate_point: [T; K],
+    best_so_far: Option<([T; K], T)>,
+) -> ([T; K], T) {
+    let candidate_distance = squared_distance(point, &candidate_point);
+    if best_so_far.is_none() {
+        return (candidate_point, candidate_distance);
+    }
+
+    let best_so_far = best_so_far.unwrap();
+    return if best_so_far.1 <= candidate_distance {
+        best_so_far
+    } else {
+        (candidate_point, candidate_distance)
+    };
 }
 
 trait KDTreeableFloat: PartialOrd + Float + From<f64> {}
