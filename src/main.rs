@@ -1,5 +1,6 @@
 use num::Float;
 use rand::prelude::*;
+use std::rc::Rc;
 
 const MAX_N_SAMPLES: usize = 100;
 const N_POINTS_FAKEDATA: usize = 1000;
@@ -9,38 +10,33 @@ fn main() {
     for i in 0..25 {
         println!("point: {:?}", points[i])
     }
-    let tree = KDSubtree::new(&points, None);
+    let tree = Node::new(&points, None);
+    let p1 = points[0];
+    let p2 = [0.3, 0.1, 0.7];
+
+    println!("contains p1: {}", tree.contains(&p1));
+    println!("contains p2: {}", tree.contains(&p2));
 }
 
-enum Node<T: KDTreeableFloat, const K: usize> {
-    Empty,
-    Leaf(Box<[T; K]>),
-    Stem(Box<KDSubtree<T, K>>),
-}
-
-impl<T: KDTreeableFloat, const K: usize> Node<T, K> {
-    fn new(points: &Vec<[T; K]>, k: usize) -> Node<T, K> {
-        if points.is_empty() {
-            return Node::Empty;
-        };
-
-        let (first, rest) = points.split_first().unwrap();
-        if rest.is_empty() {
-            return Node::Leaf(Box::new(*first));
-        };
-
-        return Node::Stem(Box::new(KDSubtree::new(points, Some(k))));
-    }
-}
-
-struct KDSubtree<T: KDTreeableFloat, const K: usize> {
+struct Stem<T: KDTreeableFloat, const K: usize> {
     median: T,
     left: Node<T, K>,
     right: Node<T, K>,
 }
 
-impl<T: KDTreeableFloat, const K: usize> KDSubtree<T, K> {
-    pub fn new(points: &Vec<[T; K]>, k: Option<usize>) -> KDSubtree<T, K> {
+struct Leaf<T: KDTreeableFloat, const K: usize>([T; K]);
+
+enum Node<T: KDTreeableFloat, const K: usize> {
+    Stem(Rc<Stem<T, K>>),
+    Leaf(Rc<Leaf<T, K>>),
+}
+
+impl<T: KDTreeableFloat, const K: usize> Node<T, K> {
+    pub fn new(points: &Vec<[T; K]>, k: Option<usize>) -> Node<T, K> {
+        if points.len() == 1 {
+            return Node::Leaf(Leaf(points[0]).into());
+        }
+
         let k = k.unwrap_or(0);
         let mut v = points.iter().map(|point| point[k]).collect::<Vec<T>>();
 
@@ -55,18 +51,26 @@ impl<T: KDTreeableFloat, const K: usize> KDSubtree<T, K> {
             }
         }
 
-        let left = Node::new(&left_points, (k + 1) % K);
-        let right = Node::new(&right_points, (k + 1) % K);
+        let left = Node::new(&left_points, Some((k + 1) % K));
+        let right = Node::new(&right_points, Some((k + 1) % K));
 
-        return KDSubtree {
-            median,
-            left,
-            right,
-        };
+        return Node::Stem(
+            Stem {
+                median,
+                left,
+                right,
+            }
+            .into(),
+        );
     }
 
     // todo:
-    pub fn contains() {}
+    pub fn contains(&self, point: &[T; K]) -> bool {
+        return match self {
+            Node::Leaf(leaf) => *point == leaf.0,
+            Node::Stem(stem) => stem.left.contains(point) || stem.right.contains(point),
+        };
+    }
 
     // todo:
     pub fn nearest_neighbor() {}
