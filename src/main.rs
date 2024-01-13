@@ -3,7 +3,7 @@ use rand::prelude::*;
 use std::rc::Rc;
 
 const MAX_N_SAMPLES: usize = 100;
-const N_POINTS_FAKEDATA: usize = 1001;
+const N_POINTS_FAKEDATA: usize = 1000000;
 
 fn main() {
     let points = fake_data(None);
@@ -11,6 +11,7 @@ fn main() {
         println!("point: {:?}", points[i])
     }
     let tree = KDTree::new(&points, None);
+    println!("tree created");
     let p1 = points[0];
     let p2 = [0.3, 0.1, 0.7];
 
@@ -22,6 +23,7 @@ fn main() {
 }
 
 struct Stem<T: KDTreeableFloat, const K: usize> {
+    k: usize,
     median: T,
     left: KDTree<T, K>,
     right: KDTree<T, K>,
@@ -59,6 +61,7 @@ impl<T: KDTreeableFloat, const K: usize> KDTree<T, K> {
 
         return KDTree::Stem(
             Stem {
+                k,
                 median,
                 left,
                 right,
@@ -67,33 +70,38 @@ impl<T: KDTreeableFloat, const K: usize> KDTree<T, K> {
         );
     }
 
-    // Depth-first search the tree to see if it contains the given point
     pub fn contains(&self, point: &[T; K]) -> bool {
-        return match self {
-            KDTree::Leaf(leaf) => *point == leaf.0,
-            KDTree::Stem(stem) => stem.left.contains(point) || stem.right.contains(point),
-        };
+        // If you think about it, just running the nearest neighbor search
+        // and checking for exact match is basically fastest way to do this,
+        // because we want to use the best distance so far to branch and bound
+        // even in the search case.
+        let (nearest_point, distance) = self.nearest_neighbor(point, None);
+        return distance <= 0.0.into();
     }
 
-    // todo:
     pub fn nearest_neighbor(
         &self,
         point: &[T; K],
         best_so_far: Option<([T; K], T)>,
     ) -> ([T; K], T) {
+        let mut best_so_far: ([T; K], T) =
+            best_so_far.unwrap_or(([f64::nan().into(); K], f64::infinity().into()));
         match self {
             KDTree::Leaf(leaf) => {
                 return closer_of(point, leaf.0.into(), best_so_far);
             }
             KDTree::Stem(stem) => {
-                let best_left = stem.left.nearest_neighbor(point, best_so_far);
-                let best_right = stem.right.nearest_neighbor(point, best_so_far);
+                // Any points in my left, right arm have distance at least
+                let (min_left, min_right) = min_lr(point[stem.k], stem.median);
 
-                if best_left.1 <= best_right.1 {
-                    return best_left;
-                } else {
-                    return best_right;
+                if min_left < best_so_far.1 {
+                    best_so_far = stem.left.nearest_neighbor(point, Some(best_so_far))
                 }
+                if min_right < best_so_far.1 {
+                    best_so_far = stem.right.nearest_neighbor(point, Some(best_so_far))
+                }
+
+                return best_so_far;
             }
         }
     }
@@ -108,6 +116,18 @@ impl<T: KDTreeableFloat, const K: usize> KDTree<T, K> {
     pub fn merge() {}
 }
 
+// The minimum distance achievable in the left and right arms
+// of a node when the current value and median are as given
+fn min_lr<T: KDTreeableFloat>(value: T, median: T) -> (T, T) {
+    let mut diff = median - value;
+    diff = diff * diff;
+    return if value <= median {
+        (0.0.into(), diff)
+    } else {
+        (diff, 0.0.into())
+    };
+}
+
 fn squared_distance<T: KDTreeableFloat, const K: usize>(point0: &[T; K], point1: &[T; K]) -> T {
     let init: T = 0.0.into();
     return (0..K).fold(init, |accum, i| {
@@ -119,14 +139,9 @@ fn squared_distance<T: KDTreeableFloat, const K: usize>(point0: &[T; K], point1:
 fn closer_of<T: KDTreeableFloat, const K: usize>(
     point: &[T; K],
     candidate_point: [T; K],
-    best_so_far: Option<([T; K], T)>,
+    best_so_far: ([T; K], T),
 ) -> ([T; K], T) {
     let candidate_distance = squared_distance(point, &candidate_point);
-    if best_so_far.is_none() {
-        return (candidate_point, candidate_distance);
-    }
-
-    let best_so_far = best_so_far.unwrap();
     return if best_so_far.1 <= candidate_distance {
         best_so_far
     } else {
