@@ -3,24 +3,6 @@ use rand::prelude::*;
 use std::rc::Rc;
 
 const MAX_N_SAMPLES: usize = 100;
-const N_POINTS_FAKEDATA: usize = 100000;
-
-fn main() {
-    let points = fake_data(None);
-    for i in 0..25 {
-        println!("point: {:?}", points[i])
-    }
-    let tree = KDTree::new(&points, None);
-    println!("tree created");
-    let p1 = points[0];
-    let p2 = [0.3, 0.1, 0.7];
-
-    println!("contains p1: {}", tree.contains(&p1));
-    println!("contains p2: {}", tree.contains(&p2));
-    let (neighbor, distance) = tree.nearest_neighbor(&p2, None);
-    println!("nearest neighbor to p2: {:?}", neighbor);
-    println!("distance: {}", distance);
-}
 
 struct Stem<T: KDTreeableFloat, const K: usize> {
     k: usize,
@@ -113,15 +95,6 @@ impl<T: KDTreeableFloat, const K: usize> KDTree<T, K> {
             }
         }
     }
-
-    // todo: maybe
-    // pub fn push() {}
-
-    // todo: maybe
-    // pub fn collect() {}
-
-    // todo: maybe
-    // pub fn merge() {}
 }
 
 // The minimum distance achievable in the left and right arms
@@ -160,19 +133,6 @@ fn closer_of<T: KDTreeableFloat, const K: usize>(
 trait KDTreeableFloat: PartialOrd + Float + From<f64> {}
 impl<T: PartialOrd + Float + From<f64>> KDTreeableFloat for T {}
 
-fn fake_data(n_points: Option<usize>) -> Vec<[f64; 3]> {
-    let n_points = n_points.unwrap_or(N_POINTS_FAKEDATA);
-    return (0..n_points)
-        .map(|_| {
-            [
-                rand::random::<f64>(),
-                rand::random::<f64>(),
-                rand::random::<f64>(),
-            ]
-        })
-        .collect::<Vec<[f64; 3]>>();
-}
-
 fn sample_median<T: KDTreeableFloat>(v: &mut Vec<T>, max_n_samples: Option<usize>) -> T {
     let max_n_samples: usize = max_n_samples.unwrap_or(MAX_N_SAMPLES);
     let mut rng = rand::thread_rng();
@@ -191,14 +151,60 @@ fn sample_median<T: KDTreeableFloat>(v: &mut Vec<T>, max_n_samples: Option<usize
 mod tests {
     use super::*;
 
+    const EPSILON: f64 = 1e-8;
+
+    // Run tests with a large number of points. This ensures that the
+    // tests will take a noticeable long amount of time unless our
+    // implementation is correct
+    const N_POINTS: usize = 100000;
+    
+    // A random point from the [0, 1] K-hypercube
+    fn random_point<T: KDTreeableFloat, const K: usize>() -> [T; K] {
+        let mut res = [0.0.into(); K];
+        for i in 0..K {
+            res[i] = rand::random::<f64>().into()
+        }
+        return res;
+    }
+
+    // A bunch of points on the [0, 1] K-hypercube
+    fn fake_data<T: KDTreeableFloat, const K: usize>() -> Vec<[T; K]> {
+        return (0..N_POINTS)
+            .map(|_| random_point())
+            .collect::<Vec<[T; K]>>();
+    }
+
     #[test]
-    fn tree_contains() {
-        let points = fake_data(Some(100));
+    fn contains() {
+        let points = fake_data();
         let tree = KDTree::new(&points, None);
 
         let p0 = points[0];
-        let p1 = [0.3, 0.1, 0.7];
+        // Kinda cool--nowhere above did we specify that K == 3, but the
+        // compiler infers it from this declaration
+        let p1 = [-0.3, 0.1, 0.7];
         assert!(tree.contains(&p0));
         assert!(!tree.contains(&p1));
+    }
+
+    #[test]
+    fn nearest_neighbor() {
+        let points = vec![
+            [0.2, -0.49, 0.87, 0.89],
+            [-1.3, 1.45, 1.41, 1.21],
+            [1.29, -0.03, -0.18, 0.23],
+            [0.79, 1.22, -0.76, -1.07],
+            [-1.27, 1.22, 0.7, -0.69],
+        ];
+        let tree = KDTree::new(&points, None);
+
+        let outsider = [0.2, -0.5, 0.9, 0.9];
+        let expected_neighbor = points[0];
+        let expected_distance = 0.0011;
+
+        let (neighbor, distance) = tree.nearest_neighbor(&outsider, None);
+
+        assert_eq!(expected_neighbor, neighbor);
+        assert!((distance - expected_distance).abs() <= EPSILON);
     }
 }
