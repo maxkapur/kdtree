@@ -11,21 +11,10 @@ const MAX_N_SAMPLES: usize = 100;
 pub trait FriendlyFloat: PartialOrd + Float + From<f64> {}
 impl<T: PartialOrd + Float + From<f64>> FriendlyFloat for T {}
 
-/// A Stem node in a KDTree defines a median and axis K on which the
-/// tree splits into subtrees.
-pub struct Stem<T: FriendlyFloat, const K: usize> {
-    k: usize,
-    median: T,
-    left: KDTree<T, K>,
-    right: KDTree<T, K>,
-}
-
-/// A Leaf node in a KDTree is a single point in K-space.
-pub struct Leaf<T: FriendlyFloat, const K: usize>([T; K]);
-
 /// KDTree is an enum which could be either a Stem or Leaf.
 /// Calling KDTree::new(&points) will (typically) produce a
-/// Stem, which branches out to define the whole tree.
+/// Stem, which branches out to define the whole tree, whose
+/// leaves are Leaf instances which store the point data.
 pub enum KDTree<T: FriendlyFloat, const K: usize> {
     Stem(Rc<Stem<T, K>>),
     Leaf(Rc<Leaf<T, K>>),
@@ -54,7 +43,8 @@ impl<T: FriendlyFloat, const K: usize> KDTree<T, K> {
     // If points has only one element, construct a Leaf node instead.
     fn new_with_axis(points: &Vec<[T; K]>, k: Option<usize>) -> KDTree<T, K> {
         if points.len() == 1 {
-            return KDTree::Leaf(Leaf(points[0]).into());
+            let point = points[0];
+            return KDTree::Leaf(Leaf { point }.into());
         }
         let k = k.unwrap_or(0);
         let median = {
@@ -104,7 +94,7 @@ impl<T: FriendlyFloat, const K: usize> KDTree<T, K> {
     pub fn contains(&self, point: &[T; K]) -> bool {
         match self {
             KDTree::Leaf(leaf) => {
-                let candidate: [T; K] = leaf.0.into();
+                let candidate: [T; K] = leaf.point.into();
                 return &candidate == point;
             }
             KDTree::Stem(stem) => {
@@ -154,6 +144,11 @@ impl<T: FriendlyFloat, const K: usize> KDTree<T, K> {
     }
 }
 
+/// A Leaf node in a KDTree is a single point in K-space.
+pub struct Leaf<T: FriendlyFloat, const K: usize> {
+    point: [T; K],
+}
+
 impl<T: FriendlyFloat, const K: usize> Leaf<T, K> {
     // Compare the distance between (the point represented by) this Leaf
     // and the target point, with the distance associated with the incumbent.
@@ -161,14 +156,23 @@ impl<T: FriendlyFloat, const K: usize> Leaf<T, K> {
     fn update(&self, point: &[T; K], incumbent: &mut Incumbent<T, K>) {
         let my_distance = self.squared_distance(point);
         if my_distance < incumbent.distance {
-            incumbent.point = self.0;
+            incumbent.point = self.point;
             incumbent.distance = my_distance;
         };
     }
 
     fn squared_distance(&self, point: &[T; K]) -> T {
-        return squared_distance(&self.0, point);
+        return squared_distance(&self.point, point);
     }
+}
+
+/// A Stem node in a KDTree defines a median and axis K on which the
+/// tree splits into subtrees.
+pub struct Stem<T: FriendlyFloat, const K: usize> {
+    k: usize,
+    median: T,
+    left: KDTree<T, K>,
+    right: KDTree<T, K>,
 }
 
 impl<T: FriendlyFloat, const K: usize> Stem<T, K> {
@@ -366,7 +370,7 @@ mod tests {
         // Candidate is better than incumbent
         {
             let point = [1.0, 2.0];
-            let candidate = Leaf([2.0, 2.0]);
+            let candidate = Leaf { point: [2.0, 2.0] };
 
             let mut incumbent = Incumbent::dummy();
             incumbent.point = [2.0, 1.0];
@@ -381,7 +385,7 @@ mod tests {
         // Candidate is worse than incumbent
         {
             let point = [1.0, 2.0];
-            let candidate = Leaf([2.0, 1.0]);
+            let candidate = Leaf { point: [2.0, 1.0] };
             let mut incumbent = Incumbent::dummy();
             incumbent.point = [2.0, 2.0];
             incumbent.distance = 1.0;
