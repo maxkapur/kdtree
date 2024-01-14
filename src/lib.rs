@@ -46,13 +46,13 @@ impl<T: FriendlyFloat, const K: usize> KDTree<T, K> {
     /// let tree = KDTree::new(&points);
     /// ```
     pub fn new(points: &Vec<[T; K]>) -> KDTree<T, K> {
-        return KDTree::new_at_depth(&points, None);
+        return KDTree::new_with_axis(&points, None);
     }
 
     // Recursive KDTree constructor. Do a median split along axis k,
     // and construct a Stem node with subtrees at depth k + 1 mod K.
     // If points has only one element, construct a Leaf node instead.
-    fn new_at_depth(points: &Vec<[T; K]>, k: Option<usize>) -> KDTree<T, K> {
+    fn new_with_axis(points: &Vec<[T; K]>, k: Option<usize>) -> KDTree<T, K> {
         if points.len() == 1 {
             return KDTree::Leaf(Leaf(points[0]).into());
         }
@@ -71,8 +71,8 @@ impl<T: FriendlyFloat, const K: usize> KDTree<T, K> {
                     right_points.push(*point);
                 }
             }
-            let left = KDTree::new_at_depth(&left_points, Some((k + 1) % K));
-            let right = KDTree::new_at_depth(&right_points, Some((k + 1) % K));
+            let left = KDTree::new_with_axis(&left_points, Some((k + 1) % K));
+            let right = KDTree::new_with_axis(&right_points, Some((k + 1) % K));
             (left, right)
         };
         return KDTree::Stem(
@@ -146,28 +146,28 @@ impl<T: FriendlyFloat, const K: usize> KDTree<T, K> {
     fn nearest_neighbor_with_incumbent(
         &self,
         point: &[T; K],
-        best_so_far: Option<&([T; K], T)>,
+        incumbent: Option<&([T; K], T)>,
     ) -> ([T; K], T) {
-        let mut best_so_far =
-            *best_so_far.unwrap_or(&([f64::nan().into(); K], f64::infinity().into()));
+        let mut incumbent =
+            *incumbent.unwrap_or(&([f64::nan().into(); K], f64::infinity().into()));
         match self {
             KDTree::Leaf(leaf) => {
-                return closer_of(point, &leaf.0.into(), &best_so_far);
+                return closer_of(point, &leaf.0.into(), &incumbent);
             }
             KDTree::Stem(stem) => {
                 // Any points in my left, right arm have distance at least
                 let (min_left, min_right) = min_lr(point[stem.k], stem.median);
-                if min_left < best_so_far.1 {
-                    best_so_far = stem
+                if min_left < incumbent.1 {
+                    incumbent = stem
                         .left
-                        .nearest_neighbor_with_incumbent(&point, Some(&best_so_far))
+                        .nearest_neighbor_with_incumbent(&point, Some(&incumbent))
                 }
-                if min_right < best_so_far.1 {
-                    best_so_far = stem
+                if min_right < incumbent.1 {
+                    incumbent = stem
                         .right
-                        .nearest_neighbor_with_incumbent(&point, Some(&best_so_far))
+                        .nearest_neighbor_with_incumbent(&point, Some(&incumbent))
                 }
-                return best_so_far;
+                return incumbent;
             }
         }
     }
@@ -200,11 +200,11 @@ fn squared_distance<T: FriendlyFloat, const K: usize>(point0: &[T; K], point1: &
 fn closer_of<T: FriendlyFloat, const K: usize>(
     point: &[T; K],
     candidate_point: &[T; K],
-    best_so_far: &([T; K], T),
+    incumbent: &([T; K], T),
 ) -> ([T; K], T) {
     let candidate_distance = squared_distance(point, &candidate_point);
-    return if best_so_far.1 <= candidate_distance {
-        *best_so_far
+    return if incumbent.1 <= candidate_distance {
+        *incumbent
     } else {
         (*candidate_point, candidate_distance)
     };
@@ -317,27 +317,27 @@ mod tests {
 
     #[test]
     fn closer_of_() {
-        // Candidate is better than best_so_far
+        // Candidate is better than incumbent
         {
             let point = [1.0, 2.0];
             let candidate = [2.0, 2.0];
-            let best_so_far = ([2.0, 1.0], 2.0);
+            let incumbent = ([2.0, 1.0], 2.0);
             // Check that our "precomputed" distance was correct :)
-            assert!((squared_distance(&point, &best_so_far.0) - 2.0).abs() <= EPSILON);
-            let closer = closer_of(&point, &candidate, &best_so_far);
+            assert!((squared_distance(&point, &incumbent.0) - 2.0).abs() <= EPSILON);
+            let closer = closer_of(&point, &candidate, &incumbent);
             assert_eq!(candidate, closer.0);
             assert!((closer.1 - 1.0).abs() <= EPSILON);
         }
 
-        // Candidate is worse than best_so_far
+        // Candidate is worse than incumbent
         {
             let point = [1.0, 2.0];
             let candidate = [2.0, 1.0];
-            let best_so_far = ([2.0, 2.0], 1.0);
+            let incumbent = ([2.0, 2.0], 1.0);
             // Check that our "precomputed" distance was correct :)
-            assert!((squared_distance(&point, &best_so_far.0) - 1.0).abs() <= EPSILON);
-            let closer = closer_of(&point, &candidate, &best_so_far);
-            assert_eq!(best_so_far.0, closer.0);
+            assert!((squared_distance(&point, &incumbent.0) - 1.0).abs() <= EPSILON);
+            let closer = closer_of(&point, &candidate, &incumbent);
+            assert_eq!(incumbent.0, closer.0);
             assert!((closer.1 - 1.0).abs() <= EPSILON);
         }
     }
