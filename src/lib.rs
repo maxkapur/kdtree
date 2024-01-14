@@ -2,6 +2,8 @@ use num::Float;
 use rand::prelude::*;
 use std::rc::Rc;
 
+// When calculating the median, sample (randomly) at least
+// this many points to reduce time required to build the tree
 const MAX_N_SAMPLES: usize = 100;
 
 struct Stem<T: KDTreeableFloat, const K: usize> {
@@ -97,8 +99,8 @@ impl<T: KDTreeableFloat, const K: usize> KDTree<T, K> {
     }
 }
 
-// The minimum distance achievable in the left and right arms
-// of a node when the current value and median are as given
+/// The minimum squared distance achievable in the left and right
+/// arms of a node when the current value and median are as given
 fn min_lr<T: KDTreeableFloat>(value: T, median: T) -> (T, T) {
     let mut diff = median - value;
     diff = diff * diff;
@@ -109,6 +111,7 @@ fn min_lr<T: KDTreeableFloat>(value: T, median: T) -> (T, T) {
     };
 }
 
+// Square of the Euclidean distance between two points
 fn squared_distance<T: KDTreeableFloat, const K: usize>(point0: &[T; K], point1: &[T; K]) -> T {
     let init: T = 0.0.into();
     return (0..K).fold(init, |accum, i| {
@@ -117,6 +120,9 @@ fn squared_distance<T: KDTreeableFloat, const K: usize>(point0: &[T; K], point1:
     });
 }
 
+// Compare the distance to the point of the candidate point with
+// the best candidate so far (whose distance is already computed).
+// Return the closer point and the corresponding distance
 fn closer_of<T: KDTreeableFloat, const K: usize>(
     point: &[T; K],
     candidate_point: [T; K],
@@ -157,7 +163,7 @@ mod tests {
     // tests will take a noticeable long amount of time unless our
     // implementation is correct
     const N_POINTS: usize = 100000;
-    
+
     // A random point from the [0, 1] K-hypercube
     fn random_point<T: KDTreeableFloat, const K: usize>() -> [T; K] {
         let mut res = [0.0.into(); K];
@@ -206,5 +212,93 @@ mod tests {
 
         assert_eq!(expected_neighbor, neighbor);
         assert!((distance - expected_distance).abs() <= EPSILON);
+    }
+
+    // Private helper functions
+
+    #[test]
+    fn min_lr_() {
+        // Left
+        {
+            let lr = min_lr(0.4, 0.5);
+            assert!(lr.0 == 0.0);
+            assert!((lr.1 - 0.1 * 0.1).abs() <= EPSILON);
+        }
+        // Right
+        {
+            let lr = min_lr(-0.4, -0.5);
+            assert!((lr.0 - 0.1 * 0.1).abs() <= EPSILON);
+            assert!(lr.1 == 0.0);
+        }
+        // Center
+        {
+            let lr = min_lr(0.5, 0.5);
+            assert!(lr.0.abs() <= EPSILON);
+            assert!(lr.1.abs() <= EPSILON);
+        }
+    }
+
+    #[test]
+    fn squared_distance_() {
+        let point0 = [3.0, -0.5];
+        let point1 = [1.0, 0.5];
+        let expected = 5.0;
+        assert!((squared_distance(&point0, &point1) - expected).abs() <= EPSILON);
+    }
+
+    #[test]
+    fn closer_of_() {
+        // Candidate is better than best_so_far
+        {
+            let point = [1.0, 2.0];
+            let candidate = [2.0, 2.0];
+            let best_so_far = ([2.0, 1.0], 2.0);
+            // Check that our "precomputed" distance was correct :)
+            assert!((squared_distance(&point, &best_so_far.0) - 2.0).abs() <= EPSILON);
+            let closer = closer_of(&point, candidate, best_so_far);
+            assert_eq!(candidate, closer.0);
+            assert!((closer.1 - 1.0).abs() <= EPSILON);
+        }
+
+        // Candidate is worse than best_so_far
+        {
+            let point = [1.0, 2.0];
+            let candidate = [2.0, 1.0];
+            let best_so_far = ([2.0, 2.0], 1.0);
+            // Check that our "precomputed" distance was correct :)
+            assert!((squared_distance(&point, &best_so_far.0) - 1.0).abs() <= EPSILON);
+            let closer = closer_of(&point, candidate, best_so_far);
+            assert_eq!(best_so_far.0, closer.0);
+            assert!((closer.1 - 1.0).abs() <= EPSILON);
+        }
+    }
+
+    #[test]
+    fn sample_median_() {
+        // Even length
+        {
+            let mut v = vec![1.0, 2.0];
+            assert!((sample_median(&mut v, None) - 1.5) <= EPSILON);
+        }
+        // Even length
+        {
+            let mut v = vec![1.0, 2.0, 3.0, 400.0];
+            assert!((sample_median(&mut v, None) - 2.5) <= EPSILON);
+        }
+        // Odd length
+        {
+            let mut v = vec![3.14];
+            assert_eq!(sample_median(&mut v, None), 3.14);
+        }
+        // Odd length
+        {
+            let mut v = vec![3.14, -1.0, 5.5, -16.7, 27.0];
+            assert_eq!(sample_median(&mut v, None), 3.14);
+        }
+        // Empty: should error
+        // {
+        //     let mut v: Vec<f64> = vec![];
+        //     assert_eq!(sample_median(&mut v, None), 3.14);
+        // }
     }
 }
