@@ -56,24 +56,25 @@ impl<T: FriendlyFloat, const K: usize> KDTree<T, K> {
         if points.len() == 1 {
             return KDTree::Leaf(Leaf(points[0]).into());
         }
-
         let k = k.unwrap_or(0);
-        let mut v = points.iter().map(|point| point[k]).collect::<Vec<T>>();
-
-        let median = sample_median(&mut v, None);
-        let mut left_points = Vec::<[T; K]>::with_capacity(points.len() / 2);
-        let mut right_points = Vec::<[T; K]>::with_capacity(points.len() / 2);
-        for point in points {
-            if point[k] <= median {
-                left_points.push(*point);
-            } else {
-                right_points.push(*point);
+        let median = {
+            let mut v = points.iter().map(|point| point[k]).collect::<Vec<T>>();
+            sample_median(&mut v, None)
+        };
+        let (left, right) = {
+            let mut left_points = Vec::<[T; K]>::with_capacity(points.len() / 2);
+            let mut right_points = Vec::<[T; K]>::with_capacity(points.len() / 2);
+            for point in points {
+                if point[k] <= median {
+                    left_points.push(*point);
+                } else {
+                    right_points.push(*point);
+                }
             }
-        }
-
-        let left = KDTree::new_at_depth(&left_points, Some((k + 1) % K));
-        let right = KDTree::new_at_depth(&right_points, Some((k + 1) % K));
-
+            let left = KDTree::new_at_depth(&left_points, Some((k + 1) % K));
+            let right = KDTree::new_at_depth(&right_points, Some((k + 1) % K));
+            (left, right)
+        };
         return KDTree::Stem(
             Stem {
                 k,
