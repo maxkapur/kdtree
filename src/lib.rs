@@ -133,10 +133,17 @@ impl<T: FriendlyFloat, const K: usize> KDTree<T, K> {
     /// let tree = KDTree::new(&points);
     /// let outsider = [0.2, -0.5, 0.9, 0.9];
     /// let expected_neighbor = points[0];
-    /// let (neighbor, _distance) = tree.nearest_neighbor(&outsider, None);
+    /// let (neighbor, _distance) = tree.nearest_neighbor(&outsider);
     /// assert_eq!(expected_neighbor, neighbor);
     /// ```
-    pub fn nearest_neighbor(
+    pub fn nearest_neighbor(&self, point: &[T; K]) -> ([T; K], T) {
+        return self.nearest_neighbor_with_incumbent(point, None);
+    }
+
+    /// The nearest point in the tree to that provided, but skip
+    /// exploring nodes for which the distance to the point cannot be
+    /// better than the incumbent.
+    fn nearest_neighbor_with_incumbent(
         &self,
         point: &[T; K],
         best_so_far: Option<&([T; K], T)>,
@@ -151,10 +158,14 @@ impl<T: FriendlyFloat, const K: usize> KDTree<T, K> {
                 // Any points in my left, right arm have distance at least
                 let (min_left, min_right) = min_lr(point[stem.k], stem.median);
                 if min_left < best_so_far.1 {
-                    best_so_far = stem.left.nearest_neighbor(&point, Some(&best_so_far))
+                    best_so_far = stem
+                        .left
+                        .nearest_neighbor_with_incumbent(&point, Some(&best_so_far))
                 }
                 if min_right < best_so_far.1 {
-                    best_so_far = stem.right.nearest_neighbor(&point, Some(&best_so_far))
+                    best_so_far = stem
+                        .right
+                        .nearest_neighbor_with_incumbent(&point, Some(&best_so_far))
                 }
                 return best_so_far;
             }
@@ -265,7 +276,7 @@ mod tests {
         let tree = KDTree::new(&points);
 
         let outsider = [0.2, -0.5, 0.9, 0.9];
-        let (neighbor, distance) = tree.nearest_neighbor(&outsider, None);
+        let (neighbor, distance) = tree.nearest_neighbor(&outsider);
         let expected_neighbor = points[0];
         assert_eq!(expected_neighbor, neighbor);
         let expected_distance = 0.0011;
