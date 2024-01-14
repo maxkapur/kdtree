@@ -3,7 +3,7 @@ use rand::prelude::*;
 use std::rc::Rc;
 
 const MAX_N_SAMPLES: usize = 100;
-const N_POINTS_FAKEDATA: usize = 1000000;
+const N_POINTS_FAKEDATA: usize = 100000;
 
 fn main() {
     let points = fake_data(None);
@@ -71,12 +71,20 @@ impl<T: KDTreeableFloat, const K: usize> KDTree<T, K> {
     }
 
     pub fn contains(&self, point: &[T; K]) -> bool {
-        // If you think about it, just running the nearest neighbor search
-        // and checking for exact match is basically fastest way to do this,
-        // because we want to use the best distance so far to branch and bound
-        // even in the search case.
-        let (nearest_point, distance) = self.nearest_neighbor(point, None);
-        return distance <= 0.0.into();
+        match self {
+            KDTree::Leaf(leaf) => {
+                let candidate: [T; K] = leaf.0.into();
+                return &candidate == point;
+            }
+            KDTree::Stem(stem) => {
+                let left_side = point[stem.k] <= stem.median;
+                return if left_side {
+                    stem.left.contains(&point)
+                } else {
+                    stem.right.contains(&point)
+                };
+            }
+        }
     }
 
     pub fn nearest_neighbor(
@@ -107,13 +115,13 @@ impl<T: KDTreeableFloat, const K: usize> KDTree<T, K> {
     }
 
     // todo: maybe
-    pub fn push() {}
+    // pub fn push() {}
 
     // todo: maybe
-    pub fn collect() {}
+    // pub fn collect() {}
 
     // todo: maybe
-    pub fn merge() {}
+    // pub fn merge() {}
 }
 
 // The minimum distance achievable in the left and right arms
@@ -177,4 +185,20 @@ fn sample_median<T: KDTreeableFloat>(v: &mut Vec<T>, max_n_samples: Option<usize
         1 => shuffled[len / 2],
         _ => panic!("{}", len % 2),
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tree_contains() {
+        let points = fake_data(Some(100));
+        let tree = KDTree::new(&points, None);
+
+        let p0 = points[0];
+        let p1 = [0.3, 0.1, 0.7];
+        assert!(tree.contains(&p0));
+        assert!(!tree.contains(&p1));
+    }
 }
