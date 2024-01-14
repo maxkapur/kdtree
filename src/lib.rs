@@ -6,19 +6,19 @@ use std::rc::Rc;
 // this many points to reduce time required to build the tree
 const MAX_N_SAMPLES: usize = 100;
 
-trait FriendlyFloat: PartialOrd + Float + From<f64> {}
+pub trait FriendlyFloat: PartialOrd + Float + From<f64> {}
 impl<T: PartialOrd + Float + From<f64>> FriendlyFloat for T {}
 
-struct Stem<T: FriendlyFloat, const K: usize> {
+pub struct Stem<T: FriendlyFloat, const K: usize> {
     k: usize,
     median: T,
     left: KDTree<T, K>,
     right: KDTree<T, K>,
 }
 
-struct Leaf<T: FriendlyFloat, const K: usize>([T; K]);
+pub struct Leaf<T: FriendlyFloat, const K: usize>([T; K]);
 
-enum KDTree<T: FriendlyFloat, const K: usize> {
+pub enum KDTree<T: FriendlyFloat, const K: usize> {
     Stem(Rc<Stem<T, K>>),
     Leaf(Rc<Leaf<T, K>>),
 }
