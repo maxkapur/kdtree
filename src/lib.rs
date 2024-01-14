@@ -148,20 +148,43 @@ impl<T: FriendlyFloat, const K: usize> KDTree<T, K> {
     /// as we explore.
     fn nearest_neighbor_with_incumbent(&self, point: &[T; K], incumbent: &mut Incumbent<T, K>) {
         match self {
-            KDTree::Leaf(leaf) => {
-                incumbent.update(point, &leaf.0.into());
-            }
-            KDTree::Stem(stem) => {
-                // Any points in my left, right arm have distance at least
-                let (min_left, min_right) = min_lr(point[stem.k], stem.median);
-                if min_left < incumbent.distance {
-                    stem.left.nearest_neighbor_with_incumbent(&point, incumbent)
-                }
-                if min_right < incumbent.distance {
-                    stem.right
-                        .nearest_neighbor_with_incumbent(&point, incumbent)
-                }
-            }
+            KDTree::Leaf(leaf) => leaf.update(point, incumbent),
+            KDTree::Stem(stem) => stem.dfs_nearest_neighbor(point, incumbent),
+        }
+    }
+}
+
+impl<T: FriendlyFloat, const K: usize> Leaf<T, K> {
+    // Compare the distance between (the point represented by) this Leaf
+    // and the target point, with the distance associated with the incumbent.
+    // If this Leaf is closer, update the incumbent in place.
+    fn update(&self, point: &[T; K], incumbent: &mut Incumbent<T, K>) {
+        let my_distance = self.squared_distance(point);
+        if my_distance < incumbent.distance {
+            incumbent.point = self.0;
+            incumbent.distance = my_distance;
+        };
+    }
+
+    fn squared_distance(&self, point: &[T; K]) -> T {
+        return squared_distance(&self.0, point);
+    }
+}
+
+impl<T: FriendlyFloat, const K: usize> Stem<T, K> {
+    // Use depth-first search to find the closest point among this Stem's
+    // arms to the target point. Update the incumbent solution in place.
+    fn dfs_nearest_neighbor(&self, point: &[T; K], incumbent: &mut Incumbent<T, K>) {
+        // Any points in my left, right arm have distance at least
+        let (min_left, min_right) = min_lr(point[self.k], self.median);
+        // and we use this bound to skip exloring arms which cannot
+        // contain a better solution than the incumbent.
+        if min_left < incumbent.distance {
+            self.left.nearest_neighbor_with_incumbent(&point, incumbent)
+        }
+        if min_right < incumbent.distance {
+            self.right
+                .nearest_neighbor_with_incumbent(&point, incumbent)
         }
     }
 }
@@ -215,17 +238,6 @@ impl<T: FriendlyFloat, const K: usize> Incumbent<T, K> {
         let point = [f64::nan().into(); K];
         let distance = f64::infinity().into();
         return Incumbent { point, distance };
-    }
-
-    // Compare the distance to the point of the candidate point with
-    // the incumbent (whose distance is already computed). Update the
-    // incumbent in place if the candidate is better.
-    fn update(&mut self, point: &[T; K], candidate: &[T; K]) -> () {
-        let candidate_distance = squared_distance(point, &candidate);
-        if candidate_distance < self.distance {
-            self.point = *candidate;
-            self.distance = candidate_distance;
-        };
     }
 }
 
@@ -354,33 +366,31 @@ mod tests {
         // Candidate is better than incumbent
         {
             let point = [1.0, 2.0];
-            let candidate = [2.0, 2.0];
-            let incumbent = ([2.0, 1.0], 2.0);
+            let candidate = Leaf([2.0, 2.0]);
+
+            let mut incumbent = Incumbent::dummy();
+            incumbent.point = [2.0, 1.0];
+            incumbent.distance = 2.0;
             // Check that our "precomputed" distance was correct :)
-            assert!((squared_distance(&point, &incumbent.0) - 2.0).abs() <= EPSILON);
+            assert!((squared_distance(&point, &incumbent.point) - 2.0).abs() <= EPSILON);
 
-            let mut incumbent_copy = Incumbent::dummy();
-            incumbent_copy.point = [2.0, 1.0];
-            incumbent_copy.distance = 2.0;
-            incumbent_copy.update(&point, &candidate);
-            assert_eq!(candidate, incumbent_copy.point);
-            assert!((incumbent_copy.distance - 1.0).abs() <= EPSILON);
+            candidate.update(&point, &mut incumbent);
+            assert_eq!([2.0, 2.0], incumbent.point);
+            assert!((incumbent.distance - 1.0).abs() <= EPSILON);
         }
-
         // Candidate is worse than incumbent
         {
             let point = [1.0, 2.0];
-            let candidate = [2.0, 1.0];
-            let incumbent = ([2.0, 2.0], 1.0);
+            let candidate = Leaf([2.0, 1.0]);
+            let mut incumbent = Incumbent::dummy();
+            incumbent.point = [2.0, 2.0];
+            incumbent.distance = 1.0;
             // Check that our "precomputed" distance was correct :)
-            assert!((squared_distance(&point, &incumbent.0) - 1.0).abs() <= EPSILON);
+            assert!((squared_distance(&point, &incumbent.point) - 1.0).abs() <= EPSILON);
 
-            let mut incumbent_copy = Incumbent::dummy();
-            incumbent_copy.point = [2.0, 2.0];
-            incumbent_copy.distance = 1.0;
-            incumbent_copy.update(&point, &candidate);
-            assert_eq!(incumbent.0, incumbent_copy.point);
-            assert!((incumbent_copy.distance - 1.0).abs() <= EPSILON);
-        }
+            candidate.update(&point, &mut incumbent);
+            assert_eq!([2.0, 2.0], incumbent.point);
+            assert!((incumbent.distance - 1.0).abs() <= EPSILON);
+        };
     }
 }
