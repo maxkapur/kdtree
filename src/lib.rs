@@ -2,13 +2,17 @@ use num::Float;
 use rand::prelude::*;
 use std::rc::Rc;
 
-// When calculating the median, sample (randomly) at least
-// this many points to reduce time required to build the tree
+// When calculating the median, sample (randomly) at least this
+// many points to reduce time required to build the tree.
 const MAX_N_SAMPLES: usize = 100;
 
+/// A FriendlyFloat is a trait alias for the combination of traits
+/// needed to create a KDTree with elements of type T: FriendlyFloat.
 pub trait FriendlyFloat: PartialOrd + Float + From<f64> {}
 impl<T: PartialOrd + Float + From<f64>> FriendlyFloat for T {}
 
+/// A Stem node in a KDTree defines a median and axis K on which the
+/// tree splits into subtrees.
 pub struct Stem<T: FriendlyFloat, const K: usize> {
     k: usize,
     median: T,
@@ -16,19 +20,39 @@ pub struct Stem<T: FriendlyFloat, const K: usize> {
     right: KDTree<T, K>,
 }
 
+/// A Leaf node in a KDTree is a single point in K-space.
 pub struct Leaf<T: FriendlyFloat, const K: usize>([T; K]);
 
+/// KDTree is an enum which could be either a Stem or Leaf.
+/// Calling KDTree::new(&points) will (typically) produce a
+/// Stem, which branches out to define the whole tree.
 pub enum KDTree<T: FriendlyFloat, const K: usize> {
     Stem(Rc<Stem<T, K>>),
     Leaf(Rc<Leaf<T, K>>),
 }
 
 impl<T: FriendlyFloat, const K: usize> KDTree<T, K> {
+    /// Create a new KDTree containing the points provided.
+    ///
+    /// ```
+    /// use kdtree::KDTree;
+    /// let points = vec![
+    ///     [0.2, -0.49, 0.87, 0.89],
+    ///     [-1.3, 1.45, 1.41, 1.21],
+    ///     [1.29, -0.03, -0.18, 0.23],
+    ///     [0.79, 1.22, -0.76, -1.07],
+    ///     [-1.27, 1.22, 0.7, -0.69],
+    /// ];
+    /// let tree = KDTree::new(&points);
+    /// ```
     pub fn new(points: &Vec<[T; K]>) -> KDTree<T, K> {
         return KDTree::new_at_depth(&points, None);
     }
 
-    pub fn new_at_depth(points: &Vec<[T; K]>, k: Option<usize>) -> KDTree<T, K> {
+    // Recursive KDTree constructor. Do a median split along axis k,
+    // and construct a Stem node with subtrees at depth k + 1 mod K.
+    // If points has only one element, construct a Leaf node instead.
+    fn new_at_depth(points: &Vec<[T; K]>, k: Option<usize>) -> KDTree<T, K> {
         if points.len() == 1 {
             return KDTree::Leaf(Leaf(points[0]).into());
         }
@@ -61,6 +85,21 @@ impl<T: FriendlyFloat, const K: usize> KDTree<T, K> {
         );
     }
 
+    /// True if the tree contains the point provided.
+    ///
+    /// ```
+    /// use kdtree::KDTree;
+    /// let points = vec![
+    ///     [0.2, -0.49, 0.87, 0.89],
+    ///     [-1.3, 1.45, 1.41, 1.21],
+    ///     [1.29, -0.03, -0.18, 0.23],
+    ///     [0.79, 1.22, -0.76, -1.07],
+    ///     [-1.27, 1.22, 0.7, -0.69],
+    /// ];
+    /// let tree = KDTree::new(&points);
+    /// assert!(tree.contains(&[0.2, -0.49, 0.87, 0.89]));
+    /// assert!(!tree.contains(&[-0.2, -0.49, 0.87, 0.89]));
+    /// ```
     pub fn contains(&self, point: &[T; K]) -> bool {
         match self {
             KDTree::Leaf(leaf) => {
@@ -78,6 +117,24 @@ impl<T: FriendlyFloat, const K: usize> KDTree<T, K> {
         }
     }
 
+    /// The nearest point in the tree to that provided, and the
+    /// squared distance to it.
+    ///
+    /// ```
+    /// use kdtree::KDTree;
+    /// let points = vec![
+    ///     [0.2, -0.49, 0.87, 0.89],
+    ///     [-1.3, 1.45, 1.41, 1.21],
+    ///     [1.29, -0.03, -0.18, 0.23],
+    ///     [0.79, 1.22, -0.76, -1.07],
+    ///     [-1.27, 1.22, 0.7, -0.69],
+    /// ];
+    /// let tree = KDTree::new(&points);
+    /// let outsider = [0.2, -0.5, 0.9, 0.9];
+    /// let expected_neighbor = points[0];
+    /// let (neighbor, _distance) = tree.nearest_neighbor(&outsider, None);
+    /// assert_eq!(expected_neighbor, neighbor);
+    /// ```
     pub fn nearest_neighbor(
         &self,
         point: &[T; K],
@@ -209,12 +266,10 @@ mod tests {
         let tree = KDTree::new(&points);
 
         let outsider = [0.2, -0.5, 0.9, 0.9];
-        let expected_neighbor = points[0];
-        let expected_distance = 0.0011;
-
         let (neighbor, distance) = tree.nearest_neighbor(&outsider, None);
-
+        let expected_neighbor = points[0];
         assert_eq!(expected_neighbor, neighbor);
+        let expected_distance = 0.0011;
         assert!((distance - expected_distance).abs() <= EPSILON);
     }
 
