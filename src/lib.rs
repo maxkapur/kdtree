@@ -6,21 +6,24 @@ use std::rc::Rc;
 // this many points to reduce time required to build the tree
 const MAX_N_SAMPLES: usize = 100;
 
-struct Stem<T: KDTreeableFloat, const K: usize> {
+trait FriendlyFloat: PartialOrd + Float + From<f64> {}
+impl<T: PartialOrd + Float + From<f64>> FriendlyFloat for T {}
+
+struct Stem<T: FriendlyFloat, const K: usize> {
     k: usize,
     median: T,
     left: KDTree<T, K>,
     right: KDTree<T, K>,
 }
 
-struct Leaf<T: KDTreeableFloat, const K: usize>([T; K]);
+struct Leaf<T: FriendlyFloat, const K: usize>([T; K]);
 
-enum KDTree<T: KDTreeableFloat, const K: usize> {
+enum KDTree<T: FriendlyFloat, const K: usize> {
     Stem(Rc<Stem<T, K>>),
     Leaf(Rc<Leaf<T, K>>),
 }
 
-impl<T: KDTreeableFloat, const K: usize> KDTree<T, K> {
+impl<T: FriendlyFloat, const K: usize> KDTree<T, K> {
     pub fn new(points: &Vec<[T; K]>, k: Option<usize>) -> KDTree<T, K> {
         if points.len() == 1 {
             return KDTree::Leaf(Leaf(points[0]).into());
@@ -101,7 +104,7 @@ impl<T: KDTreeableFloat, const K: usize> KDTree<T, K> {
 
 /// The minimum squared distance achievable in the left and right
 /// arms of a node when the current value and median are as given
-fn min_lr<T: KDTreeableFloat>(value: T, median: T) -> (T, T) {
+fn min_lr<T: FriendlyFloat>(value: T, median: T) -> (T, T) {
     let mut diff = median - value;
     diff = diff * diff;
     return if value <= median {
@@ -112,7 +115,7 @@ fn min_lr<T: KDTreeableFloat>(value: T, median: T) -> (T, T) {
 }
 
 // Square of the Euclidean distance between two points
-fn squared_distance<T: KDTreeableFloat, const K: usize>(point0: &[T; K], point1: &[T; K]) -> T {
+fn squared_distance<T: FriendlyFloat, const K: usize>(point0: &[T; K], point1: &[T; K]) -> T {
     let init: T = 0.0.into();
     return (0..K).fold(init, |accum, i| {
         let diff = point0[i] - point1[i];
@@ -123,7 +126,7 @@ fn squared_distance<T: KDTreeableFloat, const K: usize>(point0: &[T; K], point1:
 // Compare the distance to the point of the candidate point with
 // the best candidate so far (whose distance is already computed).
 // Return the closer point and the corresponding distance
-fn closer_of<T: KDTreeableFloat, const K: usize>(
+fn closer_of<T: FriendlyFloat, const K: usize>(
     point: &[T; K],
     candidate_point: [T; K],
     best_so_far: ([T; K], T),
@@ -136,10 +139,7 @@ fn closer_of<T: KDTreeableFloat, const K: usize>(
     };
 }
 
-trait KDTreeableFloat: PartialOrd + Float + From<f64> {}
-impl<T: PartialOrd + Float + From<f64>> KDTreeableFloat for T {}
-
-fn sample_median<T: KDTreeableFloat>(v: &mut Vec<T>, max_n_samples: Option<usize>) -> T {
+fn sample_median<T: FriendlyFloat>(v: &mut Vec<T>, max_n_samples: Option<usize>) -> T {
     let max_n_samples: usize = max_n_samples.unwrap_or(MAX_N_SAMPLES);
     let mut rng = rand::thread_rng();
     let (shuffled, _) = v.partial_shuffle(&mut rng, max_n_samples);
@@ -165,7 +165,7 @@ mod tests {
     const N_POINTS: usize = 100000;
 
     // A random point from the [0, 1] K-hypercube
-    fn random_point<T: KDTreeableFloat, const K: usize>() -> [T; K] {
+    fn random_point<T: FriendlyFloat, const K: usize>() -> [T; K] {
         let mut res = [0.0.into(); K];
         for i in 0..K {
             res[i] = rand::random::<f64>().into()
@@ -174,7 +174,7 @@ mod tests {
     }
 
     // A bunch of points on the [0, 1] K-hypercube
-    fn fake_data<T: KDTreeableFloat, const K: usize>() -> Vec<[T; K]> {
+    fn fake_data<T: FriendlyFloat, const K: usize>() -> Vec<[T; K]> {
         return (0..N_POINTS)
             .map(|_| random_point())
             .collect::<Vec<[T; K]>>();
