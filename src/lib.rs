@@ -218,7 +218,7 @@ fn sample_median<T: FriendlyFloat>(v: &mut Vec<T>, max_n_samples: Option<usize>)
 }
 
 /// The minimum squared distance achievable in the left and right
-/// arms of a node when the current value and median are as given
+/// arms of a node when the current value and median are as given.
 fn min_lr<T: FriendlyFloat>(value: T, median: T) -> (T, T) {
     let mut diff = median - value;
     diff = diff * diff;
@@ -229,7 +229,7 @@ fn min_lr<T: FriendlyFloat>(value: T, median: T) -> (T, T) {
     };
 }
 
-// Square of the Euclidean distance between two points
+// Square of the Euclidean distance between two points.
 fn squared_distance<T: FriendlyFloat, const K: usize>(point0: &[T; K], point1: &[T; K]) -> T {
     let init: T = 0.0.into();
     return (0..K).fold(init, |accum, i| {
@@ -238,13 +238,15 @@ fn squared_distance<T: FriendlyFloat, const K: usize>(point0: &[T; K], point1: &
     });
 }
 
-// Holds the incumbent closest point and its distance
+// Holds the incumbent closest point and its distance.
 struct Incumbent<T: FriendlyFloat, const K: usize> {
     point: [T; K],
     distance: T,
 }
 
 impl<T: FriendlyFloat, const K: usize> Incumbent<T, K> {
+    // A dummy incumbent with nan coordinates and infinite distance
+    // for initializing the search.
     fn dummy() -> Incumbent<T, K> {
         let point = [f64::nan().into(); K];
         let distance = f64::infinity().into();
