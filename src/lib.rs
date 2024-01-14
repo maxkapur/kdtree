@@ -108,10 +108,10 @@ impl<T: FriendlyFloat, const K: usize> KDTree<T, K> {
             }
             KDTree::Stem(stem) => {
                 let left_side = point[stem.k] <= stem.median;
-                return if left_side {
-                    stem.left.contains(&point)
+                if left_side {
+                    return stem.left.contains(&point);
                 } else {
-                    stem.right.contains(&point)
+                    return stem.right.contains(&point);
                 };
             }
         }
@@ -138,25 +138,23 @@ impl<T: FriendlyFloat, const K: usize> KDTree<T, K> {
     pub fn nearest_neighbor(
         &self,
         point: &[T; K],
-        best_so_far: Option<([T; K], T)>,
+        best_so_far: Option<&([T; K], T)>,
     ) -> ([T; K], T) {
-        let mut best_so_far: ([T; K], T) =
-            best_so_far.unwrap_or(([f64::nan().into(); K], f64::infinity().into()));
+        let mut best_so_far =
+            *best_so_far.unwrap_or(&([f64::nan().into(); K], f64::infinity().into()));
         match self {
             KDTree::Leaf(leaf) => {
-                return closer_of(point, leaf.0.into(), best_so_far);
+                return closer_of(point, &leaf.0.into(), &best_so_far);
             }
             KDTree::Stem(stem) => {
                 // Any points in my left, right arm have distance at least
                 let (min_left, min_right) = min_lr(point[stem.k], stem.median);
-
                 if min_left < best_so_far.1 {
-                    best_so_far = stem.left.nearest_neighbor(point, Some(best_so_far))
+                    best_so_far = stem.left.nearest_neighbor(&point, Some(&best_so_far))
                 }
                 if min_right < best_so_far.1 {
-                    best_so_far = stem.right.nearest_neighbor(point, Some(best_so_far))
+                    best_so_far = stem.right.nearest_neighbor(&point, Some(&best_so_far))
                 }
-
                 return best_so_far;
             }
         }
@@ -189,14 +187,14 @@ fn squared_distance<T: FriendlyFloat, const K: usize>(point0: &[T; K], point1: &
 // Return the closer point and the corresponding distance
 fn closer_of<T: FriendlyFloat, const K: usize>(
     point: &[T; K],
-    candidate_point: [T; K],
-    best_so_far: ([T; K], T),
+    candidate_point: &[T; K],
+    best_so_far: &([T; K], T),
 ) -> ([T; K], T) {
     let candidate_distance = squared_distance(point, &candidate_point);
     return if best_so_far.1 <= candidate_distance {
-        best_so_far
+        *best_so_far
     } else {
-        (candidate_point, candidate_distance)
+        (*candidate_point, candidate_distance)
     };
 }
 
@@ -314,7 +312,7 @@ mod tests {
             let best_so_far = ([2.0, 1.0], 2.0);
             // Check that our "precomputed" distance was correct :)
             assert!((squared_distance(&point, &best_so_far.0) - 2.0).abs() <= EPSILON);
-            let closer = closer_of(&point, candidate, best_so_far);
+            let closer = closer_of(&point, &candidate, &best_so_far);
             assert_eq!(candidate, closer.0);
             assert!((closer.1 - 1.0).abs() <= EPSILON);
         }
@@ -326,7 +324,7 @@ mod tests {
             let best_so_far = ([2.0, 2.0], 1.0);
             // Check that our "precomputed" distance was correct :)
             assert!((squared_distance(&point, &best_so_far.0) - 1.0).abs() <= EPSILON);
-            let closer = closer_of(&point, candidate, best_so_far);
+            let closer = closer_of(&point, &candidate, &best_so_far);
             assert_eq!(best_so_far.0, closer.0);
             assert!((closer.1 - 1.0).abs() <= EPSILON);
         }
