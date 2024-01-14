@@ -92,20 +92,10 @@ impl<T: FriendlyFloat, const K: usize> KDTree<T, K> {
     /// assert!(!tree.contains(&[-0.2, -0.49, 0.87, 0.89]));
     /// ```
     pub fn contains(&self, point: &[T; K]) -> bool {
-        match self {
-            KDTree::Leaf(leaf) => {
-                let candidate: [T; K] = leaf.point.into();
-                return &candidate == point;
-            }
-            KDTree::Stem(stem) => {
-                let left_side = point[stem.k] <= stem.median;
-                if left_side {
-                    return stem.left.contains(&point);
-                } else {
-                    return stem.right.contains(&point);
-                };
-            }
-        }
+        return match self {
+            KDTree::Leaf(leaf) => leaf.matches(point),
+            KDTree::Stem(stem) => stem.contains(point),
+        };
     }
 
     /// The nearest point in the tree to that provided, and the
@@ -150,6 +140,12 @@ pub struct Leaf<T: FriendlyFloat, const K: usize> {
 }
 
 impl<T: FriendlyFloat, const K: usize> Leaf<T, K> {
+    // True if the point provided equals, in each coordinate, the point
+    // associated with this Leaf.
+    fn matches(&self, point: &[T; K]) -> bool {
+        return &self.point == point;
+    }
+
     // Compare the distance between (the point represented by) this Leaf
     // and the target point, with the distance associated with the incumbent.
     // If this Leaf is closer, update the incumbent in place.
@@ -176,6 +172,17 @@ pub struct Stem<T: FriendlyFloat, const K: usize> {
 }
 
 impl<T: FriendlyFloat, const K: usize> Stem<T, K> {
+    // Use depth-first search to determine whether the point exists
+    // among this Stem's arms.
+    fn contains(&self, point: &[T; K]) -> bool {
+        let left_side = point[self.k] <= self.median;
+        if left_side {
+            return self.left.contains(&point);
+        } else {
+            return self.right.contains(&point);
+        };
+    }
+
     // Use depth-first search to find the closest point among this Stem's
     // arms to the target point. Update the incumbent solution in place.
     fn dfs_nearest_neighbor(&self, point: &[T; K], incumbent: &mut Incumbent<T, K>) {
@@ -215,10 +222,10 @@ fn sample_median<T: FriendlyFloat>(v: &mut Vec<T>, max_n_samples: Option<usize>)
 fn min_lr<T: FriendlyFloat>(value: T, median: T) -> (T, T) {
     let mut diff = median - value;
     diff = diff * diff;
-    return if value <= median {
-        (0.0.into(), diff)
+    if value <= median {
+        return (0.0.into(), diff);
     } else {
-        (diff, 0.0.into())
+        return (diff, 0.0.into());
     };
 }
 
