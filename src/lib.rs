@@ -24,7 +24,11 @@ enum KDTree<T: FriendlyFloat, const K: usize> {
 }
 
 impl<T: FriendlyFloat, const K: usize> KDTree<T, K> {
-    pub fn new(points: &Vec<[T; K]>, k: Option<usize>) -> KDTree<T, K> {
+    pub fn new(points: &Vec<[T; K]>) -> KDTree<T, K> {
+        return KDTree::new_at_depth(&points, None);
+    }
+
+    pub fn new_at_depth(points: &Vec<[T; K]>, k: Option<usize>) -> KDTree<T, K> {
         if points.len() == 1 {
             return KDTree::Leaf(Leaf(points[0]).into());
         }
@@ -43,8 +47,8 @@ impl<T: FriendlyFloat, const K: usize> KDTree<T, K> {
             }
         }
 
-        let left = KDTree::new(&left_points, Some((k + 1) % K));
-        let right = KDTree::new(&right_points, Some((k + 1) % K));
+        let left = KDTree::new_at_depth(&left_points, Some((k + 1) % K));
+        let right = KDTree::new_at_depth(&right_points, Some((k + 1) % K));
 
         return KDTree::Stem(
             Stem {
@@ -183,7 +187,7 @@ mod tests {
     #[test]
     fn contains() {
         let points = fake_data();
-        let tree = KDTree::new(&points, None);
+        let tree = KDTree::new(&points);
 
         let p0 = points[0];
         // Kinda cool--nowhere above did we specify that K == 3, but the
@@ -202,7 +206,7 @@ mod tests {
             [0.79, 1.22, -0.76, -1.07],
             [-1.27, 1.22, 0.7, -0.69],
         ];
-        let tree = KDTree::new(&points, None);
+        let tree = KDTree::new(&points);
 
         let outsider = [0.2, -0.5, 0.9, 0.9];
         let expected_neighbor = points[0];
