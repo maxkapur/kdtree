@@ -137,40 +137,50 @@ impl<T: FriendlyFloat, const K: usize> KDTree<T, K> {
     /// assert_eq!(expected_neighbor, neighbor);
     /// ```
     pub fn nearest_neighbor(&self, point: &[T; K]) -> ([T; K], T) {
-        return self.nearest_neighbor_with_incumbent(point, None);
+        let mut incumbent = Incumbent::dummy();
+        self.nearest_neighbor_with_incumbent(point, &mut incumbent);
+        return (incumbent.point, incumbent.distance);
     }
 
     /// The nearest point in the tree to that provided, but skip
     /// exploring nodes for which the distance to the point cannot be
-    /// better than the incumbent.
-    fn nearest_neighbor_with_incumbent(
-        &self,
-        point: &[T; K],
-        incumbent: Option<&([T; K], T)>,
-    ) -> ([T; K], T) {
-        let mut incumbent =
-            *incumbent.unwrap_or(&([f64::nan().into(); K], f64::infinity().into()));
+    /// better than the incumbent. Iteratively update incumbent in place
+    /// as we explore.
+    fn nearest_neighbor_with_incumbent(&self, point: &[T; K], incumbent: &mut Incumbent<T, K>) {
         match self {
             KDTree::Leaf(leaf) => {
-                return closer_of(point, &leaf.0.into(), &incumbent);
+                incumbent.update(point, &leaf.0.into());
             }
             KDTree::Stem(stem) => {
                 // Any points in my left, right arm have distance at least
                 let (min_left, min_right) = min_lr(point[stem.k], stem.median);
-                if min_left < incumbent.1 {
-                    incumbent = stem
-                        .left
-                        .nearest_neighbor_with_incumbent(&point, Some(&incumbent))
+                if min_left < incumbent.distance {
+                    stem.left.nearest_neighbor_with_incumbent(&point, incumbent)
                 }
-                if min_right < incumbent.1 {
-                    incumbent = stem
-                        .right
-                        .nearest_neighbor_with_incumbent(&point, Some(&incumbent))
+                if min_right < incumbent.distance {
+                    stem.right
+                        .nearest_neighbor_with_incumbent(&point, incumbent)
                 }
-                return incumbent;
             }
         }
     }
+}
+
+// Compute the sample median of the given vector. Use at most
+// max_n_samples to decrease computation time. Needs a mutable borrow
+// because we construct the sample by shuffling the vector in place.
+fn sample_median<T: FriendlyFloat>(v: &mut Vec<T>, max_n_samples: Option<usize>) -> T {
+    let max_n_samples: usize = max_n_samples.unwrap_or(MAX_N_SAMPLES);
+    let mut rng = rand::thread_rng();
+    let (shuffled, _) = v.partial_shuffle(&mut rng, max_n_samples);
+
+    shuffled.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let len = shuffled.len();
+    return match len % 2 {
+        0 => (shuffled[len / 2 - 1] + shuffled[len / 2]) / 2.0.into(),
+        1 => shuffled[len / 2],
+        _ => panic!("{}", len % 2),
+    };
 }
 
 /// The minimum squared distance achievable in the left and right
@@ -194,34 +204,29 @@ fn squared_distance<T: FriendlyFloat, const K: usize>(point0: &[T; K], point1: &
     });
 }
 
-// Compare the distance to the point of the candidate point with
-// the best candidate so far (whose distance is already computed).
-// Return the closer point and the corresponding distance
-fn closer_of<T: FriendlyFloat, const K: usize>(
-    point: &[T; K],
-    candidate_point: &[T; K],
-    incumbent: &([T; K], T),
-) -> ([T; K], T) {
-    let candidate_distance = squared_distance(point, &candidate_point);
-    return if incumbent.1 <= candidate_distance {
-        *incumbent
-    } else {
-        (*candidate_point, candidate_distance)
-    };
+// Holds the incumbent closest point and its distance
+struct Incumbent<T: FriendlyFloat, const K: usize> {
+    point: [T; K],
+    distance: T,
 }
 
-fn sample_median<T: FriendlyFloat>(v: &mut Vec<T>, max_n_samples: Option<usize>) -> T {
-    let max_n_samples: usize = max_n_samples.unwrap_or(MAX_N_SAMPLES);
-    let mut rng = rand::thread_rng();
-    let (shuffled, _) = v.partial_shuffle(&mut rng, max_n_samples);
+impl<T: FriendlyFloat, const K: usize> Incumbent<T, K> {
+    fn dummy() -> Incumbent<T, K> {
+        let point = [f64::nan().into(); K];
+        let distance = f64::infinity().into();
+        return Incumbent { point, distance };
+    }
 
-    shuffled.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    let len = shuffled.len();
-    return match len % 2 {
-        0 => (shuffled[len / 2 - 1] + shuffled[len / 2]) / 2.0.into(),
-        1 => shuffled[len / 2],
-        _ => panic!("{}", len % 2),
-    };
+    // Compare the distance to the point of the candidate point with
+    // the incumbent (whose distance is already computed). Update the
+    // incumbent in place if the candidate is better.
+    fn update(&mut self, point: &[T; K], candidate: &[T; K]) -> () {
+        let candidate_distance = squared_distance(point, &candidate);
+        if candidate_distance < self.distance {
+            self.point = *candidate;
+            self.distance = candidate_distance;
+        };
+    }
 }
 
 #[cfg(test)]
@@ -286,6 +291,35 @@ mod tests {
     // Private helper functions
 
     #[test]
+    fn sample_median_() {
+        // Even length
+        {
+            let mut v = vec![1.0, 2.0];
+            assert!((sample_median(&mut v, None) - 1.5) <= EPSILON);
+        }
+        // Even length
+        {
+            let mut v = vec![1.0, 2.0, 3.0, 400.0];
+            assert!((sample_median(&mut v, None) - 2.5) <= EPSILON);
+        }
+        // Odd length
+        {
+            let mut v = vec![3.14];
+            assert_eq!(sample_median(&mut v, None), 3.14);
+        }
+        // Odd length
+        {
+            let mut v = vec![3.14, -1.0, 5.5, -16.7, 27.0];
+            assert_eq!(sample_median(&mut v, None), 3.14);
+        }
+        // Empty: should error
+        // {
+        //     let mut v: Vec<f64> = vec![];
+        //     assert_eq!(sample_median(&mut v, None), 3.14);
+        // }
+    }
+
+    #[test]
     fn min_lr_() {
         // Left
         {
@@ -316,7 +350,7 @@ mod tests {
     }
 
     #[test]
-    fn closer_of_() {
+    fn incumbent_update() {
         // Candidate is better than incumbent
         {
             let point = [1.0, 2.0];
@@ -324,9 +358,13 @@ mod tests {
             let incumbent = ([2.0, 1.0], 2.0);
             // Check that our "precomputed" distance was correct :)
             assert!((squared_distance(&point, &incumbent.0) - 2.0).abs() <= EPSILON);
-            let closer = closer_of(&point, &candidate, &incumbent);
-            assert_eq!(candidate, closer.0);
-            assert!((closer.1 - 1.0).abs() <= EPSILON);
+
+            let mut incumbent_copy = Incumbent::dummy();
+            incumbent_copy.point = [2.0, 1.0];
+            incumbent_copy.distance = 2.0;
+            incumbent_copy.update(&point, &candidate);
+            assert_eq!(candidate, incumbent_copy.point);
+            assert!((incumbent_copy.distance - 1.0).abs() <= EPSILON);
         }
 
         // Candidate is worse than incumbent
@@ -336,38 +374,13 @@ mod tests {
             let incumbent = ([2.0, 2.0], 1.0);
             // Check that our "precomputed" distance was correct :)
             assert!((squared_distance(&point, &incumbent.0) - 1.0).abs() <= EPSILON);
-            let closer = closer_of(&point, &candidate, &incumbent);
-            assert_eq!(incumbent.0, closer.0);
-            assert!((closer.1 - 1.0).abs() <= EPSILON);
-        }
-    }
 
-    #[test]
-    fn sample_median_() {
-        // Even length
-        {
-            let mut v = vec![1.0, 2.0];
-            assert!((sample_median(&mut v, None) - 1.5) <= EPSILON);
+            let mut incumbent_copy = Incumbent::dummy();
+            incumbent_copy.point = [2.0, 2.0];
+            incumbent_copy.distance = 1.0;
+            incumbent_copy.update(&point, &candidate);
+            assert_eq!(incumbent.0, incumbent_copy.point);
+            assert!((incumbent_copy.distance - 1.0).abs() <= EPSILON);
         }
-        // Even length
-        {
-            let mut v = vec![1.0, 2.0, 3.0, 400.0];
-            assert!((sample_median(&mut v, None) - 2.5) <= EPSILON);
-        }
-        // Odd length
-        {
-            let mut v = vec![3.14];
-            assert_eq!(sample_median(&mut v, None), 3.14);
-        }
-        // Odd length
-        {
-            let mut v = vec![3.14, -1.0, 5.5, -16.7, 27.0];
-            assert_eq!(sample_median(&mut v, None), 3.14);
-        }
-        // Empty: should error
-        // {
-        //     let mut v: Vec<f64> = vec![];
-        //     assert_eq!(sample_median(&mut v, None), 3.14);
-        // }
     }
 }
